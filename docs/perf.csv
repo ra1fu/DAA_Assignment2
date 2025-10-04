@@ -1,0 +1,5 @@
+n,trial,time_ms,comparisons,swaps,arrayGets,arraySets,allocations
+10,1,0,43,29,154,68,10
+10,2,0,43,29,154,68,10
+100,1,0,1075,616,3482,1332,100
+100,2,0,1075,616,3482,1332,100
