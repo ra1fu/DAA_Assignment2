@@ -1,0 +1,85 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, "feature/**" ]
+  pull_request:
+    branches: [ main ]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-test:
+    name: Build & Test (JDK ${{ matrix.java }} / ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        java: [17, 21]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ matrix.java }}
+          cache: maven
+
+      - name: Show Maven version
+        run: mvn -v
+
+      - name: Run tests (Surefire)
+        run: mvn -DskipTests=false -B test
+
+      - name: Package fat-jar (shade)
+        run: mvn -DskipTests -B package
+
+      - name: Upload surefire reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: surefire-reports-${{ matrix.os }}-jdk${{ matrix.java }}
+          path: target/surefire-reports/
+
+      - name: Upload CLI jar
+        if: matrix.os == 'ubuntu-latest' && matrix.java == '17'
+        uses: actions/upload-artifact@v4
+        with:
+          name: min-heap-cli
+          path: target/min-heap-cli.jar
+
+  smoke-cli:
+    name: CLI smoke test (Ubuntu JDK17)
+    runs-on: ubuntu-latest
+    needs: build-test
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+          cache: maven
+
+      - name: Build fat-jar
+        run: mvn -q -DskipTests package
+
+      - name: Run CLI with small inputs
+        run: |
+          mkdir -p docs
+          java -jar target/min-heap-cli.jar --n 10,100 --trials 2 --dist random --csv docs/perf_ci.csv
+          echo "CSV lines:" $(wc -l < docs/perf_ci.csv)
+          test $(wc -l < docs/perf_ci.csv) -ge 5
+
+      - name: Upload CLI CSV
+        uses: actions/upload-artifact@v4
+        with:
+          name: perf-ci-csv
+          path: docs/perf_ci.csv
